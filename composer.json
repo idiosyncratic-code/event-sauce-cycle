@@ -1,0 +1,41 @@
+{
+  "name": "idiosyncratic/eventsauce-cycle",
+  "type": "library",
+  "license": "EUPL-1.2",
+  "description": "Cycle Database Implementation for Eventsauce",
+  "homepage": "https://github.com/idiosyncratic-code/eventsauce-cycle",
+  "support": {
+    "source": "https://github.com/idiosyncratic-code/eventsauce-cycle"
+  },
+  "require": {
+    "php": ">=8.2",
+    "cycle/database": "^2.8",
+    "eventsauce/eventsauce": "^3.6",
+    "eventsauce/id-encoding": "^1.0",
+    "eventsauce/message-repository-table-schema": "^1.0",
+    "eventsauce/uuid-encoding": "^1.0",
+    "ramsey/uuid": "^4.7"
+  },
+  "autoload": {
+    "psr-4": {
+      "Idiosyncratic\\EventSauce\\Cycle\\": "src"
+    }
+  },
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "phpstan/extension-installer": true
+    }
+  },
+  "scripts": {
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "require-dev": {
+    "idiosyncratic/coding-standard": "^3.0",
+    "php-parallel-lint/php-parallel-lint": "^1.3",
+    "phpstan/phpstan": "^1.10",
+    "qossmic/deptrac-shim": "^1.0"
+  }
+}
