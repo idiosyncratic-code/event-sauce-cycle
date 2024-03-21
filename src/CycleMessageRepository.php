@@ -121,7 +121,7 @@ class CycleMessageRepository implements MessageRepository
         );
 
         try {
-            $result = $this->db->execute(
+            $results = $this->db->query(
                 $query,
                 [
                     'root_id' => $this->aggregateRootIdEncoder->encodeId($id),
@@ -155,7 +155,7 @@ class CycleMessageRepository implements MessageRepository
             $this->tableSchema->versionColumn(),
         );
 
-        $result = $this->db->execute(
+        $result = $this->db->query(
             $query,
             ['id' => $incrementalIdColumn],
         );
