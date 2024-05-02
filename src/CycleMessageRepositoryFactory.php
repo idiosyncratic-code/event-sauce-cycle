@@ -40,7 +40,7 @@ final class CycleMessageRepositoryFactory
     public function makeMessageRepository(
         string $db,
         string $table,
-    ) : CycleMessageRepositoryFactory {
+    ) : CycleMessageRepository {
         $repositoryKey = sprintf('%s_%s', $db, $table);
 
         if (isset($this->repositories[$repositoryKey])) {
@@ -48,7 +48,7 @@ final class CycleMessageRepositoryFactory
         }
 
         return $this->repositories[$repositoryKey] = new CycleMessageRepository(
-            table: $this->dbProvider->database($db)->table(sprintf('%s_event_store', $table),
+            table: $this->dbProvider->database($db)->table(sprintf('%s_event_store', $table)),
             serializer: $this->serializer,
             jsonEncodeOptions: $this->jsonEncodeOptions,
             tableSchema: $this->tableSchema,
