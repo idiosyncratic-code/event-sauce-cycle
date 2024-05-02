@@ -30,7 +30,7 @@ use function json_decode;
 use function json_encode;
 use function sprintf;
 
-class CycleMessageRepository implements MessageRepository
+final class CycleMessageRepository implements MessageRepository
 {
     private readonly TableSchema $tableSchema;
 
