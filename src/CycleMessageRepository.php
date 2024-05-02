@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Idiosyncratic\EventSauce\Cycle;
 
-use Cycle\Database\DatabaseInterface;
+use Cycle\Database\Table;
 use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\Header;
 use EventSauce\EventSourcing\Message;
@@ -25,25 +25,21 @@ use Throwable;
 use Traversable;
 
 use function array_keys;
-use function array_map;
-use function array_merge;
 use function count;
-use function implode;
 use function json_decode;
 use function json_encode;
 use function sprintf;
 
 class CycleMessageRepository implements MessageRepository
 {
-    private TableSchema $tableSchema;
+    private readonly TableSchema $tableSchema;
 
-    private IdEncoder $aggregateRootIdEncoder;
+    private readonly IdEncoder $aggregateRootIdEncoder;
 
-    private IdEncoder $eventIdEncoder;
+    private readonly IdEncoder $eventIdEncoder;
 
     public function __construct(
-        private readonly DatabaseInterface $db,
-        private readonly string $tableName,
+        private readonly Table $table,
         private readonly MessageSerializer $serializer,
         private readonly int $jsonEncodeOptions = 0,
         TableSchema|null $tableSchema = null,
@@ -62,48 +58,41 @@ class CycleMessageRepository implements MessageRepository
             return;
         }
 
+        $additionalColumns = $this->tableSchema->additionalColumns()
+
         $insertColumns = [
             $this->tableSchema->eventIdColumn(),
             $this->tableSchema->aggregateRootIdColumn(),
             $this->tableSchema->versionColumn(),
             $this->tableSchema->payloadColumn(),
-            ...array_keys($additionalColumns = $this->tableSchema->additionalColumns()),
+            ...array_keys($additionalColumns),
         ];
 
-        $insertValues = [];
-        $insertParameters = [];
+        $messageRowset = [];
 
-        foreach ($messages as $index => $message) {
+        foreach ($messages as $message) {
             $payload = $this->serializer->serializeMessage($message);
+
             $payload['headers'][Header::EVENT_ID] ??= Uuid::uuid4()->toString();
 
-            $messageParameters = [
-                $this->indexParameter('event_id', $index) => $this->eventIdEncoder->encodeId($payload['headers'][Header::EVENT_ID]),
-                $this->indexParameter('aggregate_root_id', $index) => $this->aggregateRootIdEncoder->encodeId($message->aggregateRootId()),
-                $this->indexParameter('version', $index) => $payload['headers'][Header::AGGREGATE_ROOT_VERSION] ?? 0,
-                $this->indexParameter('payload', $index) => json_encode($payload, $this->jsonEncodeOptions),
+            $messageRow = [
+                $this->eventIdEncoder->encodeId($payload['headers'][Header::EVENT_ID]),
+                $this->aggregateRootIdEncoder->encodeId($message->aggregateRootId()),
+                $payload['headers'][Header::AGGREGATE_ROOT_VERSION] ?? 0,
+                json_encode($payload, $this->jsonEncodeOptions),
             ];
 
             foreach ($additionalColumns as $column => $header) {
-                $messageParameters[$this->indexParameter($column, $index)] = $payload['headers'][$header];
+                $messageRow[] = $payload['headers'][$header] ?? null;
             }
 
-            // Creates a values line like: (:event_id_1, :aggregate_root_id_1, ...)
-            $insertValues[] = implode(', ', $this->formatNamedParameters(array_keys($messageParameters)));
-
-            // Flatten the message parameters into the query parameters
-            $insertParameters = array_merge($insertParameters, $messageParameters);
+            $messageRowset[] = $messageRow;
         }
 
-        $insertQuery = sprintf(
-            "INSERT INTO %s (%s) VALUES\n(%s)",
-            $this->tableName,
-            implode(', ', $insertColumns),
-            implode("),\n(", $insertValues),
-        );
-
         try {
-            $this->db->execute($insertQuery, $insertParameters);
+            $this->table
+                ->insertMultiple($insertColumns, $messageRowset)
+                ->run();
         } catch (Throwable $exception) {
             throw UnableToPersistMessages::dueTo('', $exception);
         }
@@ -112,23 +101,14 @@ class CycleMessageRepository implements MessageRepository
     public function retrieveAll(
         AggregateRootId $id,
     ) : Generator {
-        $query = sprintf(
-            'SELECT %s FROM %s WHERE %s = :root_id ORDER BY %s ASC',
-            $this->tableSchema->payloadColumn(),
-            $this->tableName,
-            $this->tableSchema->aggregateRootIdColumn(),
-            $this->tableSchema->versionColumn(),
-        );
-
         try {
-            $results = $this->db->query(
-                $query,
-                [
-                    'root_id' => $this->aggregateRootIdEncoder->encodeId($id),
-                ],
-            );
+            $result = $this->table->select()
+                ->columns($this->tableSchema->payloadColumn())
+                ->where($this->tableSchema->aggregateRootIdColumn(), $this->aggregateRootIdEncoder->encodeId($id))
+                ->orderBy($this->tableSchema->versionColumn(), 'ASC')
+                ->run();
 
-            return $this->yieldMessagesFromPayloads($results);
+            return $this->yieldMessagesFromPayloads($result);
         } catch (Throwable $exception) {
             throw UnableToRetrieveMessages::dueTo('', $exception);
         }
@@ -139,35 +119,13 @@ class CycleMessageRepository implements MessageRepository
         AggregateRootId $id,
         int $aggregateRootVersion,
     ) : Generator {
-        $query = sprintf(
-            'SELECT %s FROM %s order by %s ASC',
-            $this->tableSchema->payloadColumn(),
-            $this->tableName,
-            $this->tableSchema->versionColumn(),
-        );
-
-        $query = sprintf(
-            'SELECT %s FROM %s WHERE %s = :root_id AND WHERE %s > :version ORDER BY %s ASC',
-            $this->tableSchema->payloadColumn(),
-            $this->tableName,
-            $this->tableSchema->aggregateRootIdColumn(),
-            $this->tableSchema->versionColumn(),
-            $this->tableSchema->versionColumn(),
-        );
-
-        $result = $this->db->query(
-            $query,
-            ['id' => $incrementalIdColumn],
-        );
-
         try {
-            $result = $this->db->execute(
-                $query,
-                [
-                    'root_id' => $this->aggregateRootIdEncoder->encodeId($id),
-                    'version' => $aggregateRootVersion,
-                ],
-            );
+            $result = $this->table->select()
+                ->columns($this->tableSchema->payloadColumn())
+                ->where($this->tableSchema->aggregateRootIdColumn(), $this->aggregateRootIdEncoder->encodeId($id))
+                ->andWhere($this->tableSchema->versionColumn(), $aggregateRootVersion)
+                ->orderBy($this->tableSchema->versionColumn(), 'ASC')
+                ->run();
 
             return $this->yieldMessagesFromPayloads($result);
         } catch (Throwable $exception) {
@@ -188,23 +146,17 @@ class CycleMessageRepository implements MessageRepository
             );
         }
 
-        $numberOfMessages = 0;
-
-        $incrementalIdColumn = $this->tableSchema->incrementalIdColumn();
-
-        $query = sprintf(
-            'SELECT %s FROM %s WHERE %s > :id order by %s ASC limit %s',
-            $this->tableSchema->payloadColumn(),
-            $this->tableName,
-            $incrementalColumnId,
-            $incrementalColumnId,
-            $cursor->limit(),
-        );
-
         try {
-            $result = $this->db->execute(
-                $query,
-                ['id' => $incrementalIdColumn],
+            $numberOfMessages = 0;
+
+            $incrementalIdColumn = $this->tableSchema->incrementalIdColumn();
+
+            $result = $this->table->select()
+                ->columns($this->tableSchema->payloadColumn())
+                ->where($incrementalIdColumn, '>', $cursor->offset())
+                ->limit($cursor->limit())
+                ->orderBy($incrementalIdColumn, 'ASC')
+                ->run();
             );
 
             foreach ($result as $payload) {
@@ -217,24 +169,6 @@ class CycleMessageRepository implements MessageRepository
         }
 
         return $cursor->plusOffset($numberOfMessages);
-    }
-
-    private function indexParameter(
-        string $name,
-        int $index,
-    ) : string {
-        return $name . '_' . $index;
-    }
-
-    /**
-     * @param array<mixed> $parameters
-     *
-     * @return array<mixed>
-     */
-    private function formatNamedParameters(
-        array $parameters,
-    ) : array {
-        return array_map(static fn (string $name) => ':' . $name, $parameters);
     }
 
     /**
