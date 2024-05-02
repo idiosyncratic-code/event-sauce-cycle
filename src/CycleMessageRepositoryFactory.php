@@ -48,7 +48,7 @@ final class CycleMessageRepositoryFactory
         }
 
         return $this->repositories[$repositoryKey] = new CycleMessageRepository(
-            table: $this->dbProvider->database($db)->table($table),
+            table: $this->dbProvider->database($db)->table(sprintf('%s_event_store', $table),
             serializer: $this->serializer,
             jsonEncodeOptions: $this->jsonEncodeOptions,
             tableSchema: $this->tableSchema,
