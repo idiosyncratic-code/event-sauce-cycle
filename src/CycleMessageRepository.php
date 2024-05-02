@@ -58,7 +58,7 @@ final class CycleMessageRepository implements MessageRepository
             return;
         }
 
-        $additionalColumns = $this->tableSchema->additionalColumns()
+        $additionalColumns = $this->tableSchema->additionalColumns();
 
         $insertColumns = [
             $this->tableSchema->eventIdColumn(),
@@ -91,8 +91,7 @@ final class CycleMessageRepository implements MessageRepository
 
         try {
             $this->table
-                ->insertMultiple($insertColumns, $messageRowset)
-                ->run();
+                ->insertMultiple($insertColumns, $messageRowset);
         } catch (Throwable $exception) {
             throw UnableToPersistMessages::dueTo('', $exception);
         }
@@ -157,7 +156,6 @@ final class CycleMessageRepository implements MessageRepository
                 ->limit($cursor->limit())
                 ->orderBy($incrementalIdColumn, 'ASC')
                 ->run();
-            );
 
             foreach ($result as $payload) {
                 $numberOfMessages++;
